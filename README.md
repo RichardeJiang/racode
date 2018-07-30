@@ -45,6 +45,7 @@ to generate the predicted top-ranking phrases.
 The final result can be found in dir ./process/resultXXX.txt, with the XXX indicating the configurations, for instance, the prediction window size and the weighting coefficient (please refer to Section 3.3 of the paper for more details). This repo has included a sample result file: ./process/result-20.txt. The format of the file is as follows:
 
 | Predicting Year 1980 | actual? | predict? |
+| :---: | :---: | :---: |
 | allocator | + | + |
 | allocator | + | + |
 | iterations | + | + |
