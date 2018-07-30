@@ -906,9 +906,9 @@ if (__name__ == '__main__'):
 	End of TF-IDF
 	"""
 
-	writeMapToFile(finalVocabTextrankMapSeriesMap, 'd/doublegraph/doublegraph-5000-NPs.txt')
-	write2DListVertical(authorsHITSSeries, 'd/doublegraph/top-authors-5000-NPs.txt')
-	writeMapToFile(finalVocabTFIDFMapSeriesMap, 'd/doublegraph/doublegraph-NPs-vocab.txt')
+	writeMapToFile(finalVocabTextrankMapSeriesMap, 'process/doublegraph-NPs.txt')
+	write2DListVertical(authorsHITSSeries, 'process/top-authors-NPs.txt')
+	writeMapToFile(finalVocabTFIDFMapSeriesMap, 'process/doublegraph-vocab.txt')
 
 	print 'End processing!'
 

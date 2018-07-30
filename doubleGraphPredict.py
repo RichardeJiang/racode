@@ -8,10 +8,6 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 from collections import Counter
-import statsmodels.api as sm
-import statsmodels.formula.api as smapi
-import pandas as pd
-import seaborn as sns
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import cross_val_predict
 from sklearn.model_selection import KFold
@@ -271,12 +267,24 @@ def calcMRRMAPNDCG(actualIndices, predictIndices):
 
 	mask = actualIndices == predictIndices
 	predictScores[mask] = scores[mask]
+	# for actualIndex in actualIndices:
+	# 	if actualIndex in predictIndices:
+	# 		i, = np.where(predictIndices == actualIndex)
+	# 		i = i[0]
+	# 		j, = np.where(actualIndices == actualIndex)
+	# 		j = j[0]
+	# 		predictScores[i] = scores[j]
+	# 		predictScores[i] = 1
+	# 		print "actual score: %f" % scores[j]
+	# 		print "predict score: %f" % predictScores[i]
 
 	DCG_Pred = predictScores[0]
 	for index in range(1, num):
 		DCG_Pred += (predictScores[index] / math.log((index + 1), 2))
 
 	nDCG = DCG_Pred / DCG_GT
+	print "GT: %f" % DCG_GT
+	print "Pr: %f" % DCG_Pred
 
 	return nDCG
 
@@ -358,24 +366,9 @@ def trainEmbWords(trainX, trainY, fullX):
 
 	fullYPredict = model.predict(trainFullX)
 
-
-	# lookback = len(newXTrain[0])
-	# XTrainLSTM = np.reshape(newXTrain, (newXTrain.shape[0], newXTrain.shape[1], 1))
-	# XTestLSTM = np.reshape(newXTest, (newXTest.shape[0], newXTest.shape[1], 1))
-	# LSTMModel = Sequential()
-
-	# LSTMModel.add(SimpleRNN(4, return_sequences = True, input_shape = XTrainLSTM.shape[1:]))
-	# LSTMModel.add(SimpleRNN(4))
-	# LSTMModel.add(Dense(1))
-	# LSTMModel.compile(loss="mean_squared_error", optimizer = 'rmsprop')
-	# LSTMModel.fit(XTrainLSTM, newYTrain, epochs = 100, batch_size = 10, verbose = 2)
-
-	# LSTMTrainPredict = LSTMModel.predict(XTrainLSTM)
-	# LSTMTestPredict = LSTMModel.predict(XTestLSTM)
-
 	return fullYPredict
 
-def prepareWordWithGoogleMatrix(wordList, timeSeries, baseYear, vocabTfIdfSeriesMap):
+def prepareWordWithGoogleMatrix(wordList, timeSeries, baseYear, vocabTfIdfSeriesMap, clusters):
 	yearCover = len(timeSeries[0])
 	phraseCount = len(wordList)
 	result = [[0.0 for n in range(yearCover)] for i in range(phraseCount)]
@@ -392,7 +385,7 @@ def prepareWordWithGoogleMatrix(wordList, timeSeries, baseYear, vocabTfIdfSeries
 	wordList = np.asarray(wordList)
 
 	for yearIndex in range(yearCover):
-		predefinedNumOfClusters = 25
+		predefinedNumOfClusters = clusters
 		# vocab = vocabSeries[index]
 		currVocab = wordList[np.nonzero(timeSeries[:, yearIndex])[0]]
 		vectors = []
@@ -443,6 +436,11 @@ def prepareWordWithGoogleMatrix(wordList, timeSeries, baseYear, vocabTfIdfSeries
 			label = kmeans.labels_[phraseIndex]
 			centroid = centers[label]
 			distance = np.linalg.norm(vector - centroid)
+			# if distance == 0.0:
+			# 	distance = smallestDistance / 100    # think about another way to do this, otherwise is magic number
+			# elif distance < smallestDistance:
+			# 	smallestDistance = distance
+			# relativeness = 1.0 / distance
 			relativeness = cossim(vector, centroid)
 			if word in wordListCopy:
 				# newListIndex = np.where(wordList == word)[0]
@@ -474,6 +472,27 @@ def preparePhraseRelativenessMatrix(phraseList, timeSeries, baseYear):
 		model = models.Word2Vec.load('single/emblistflat/' + fileName)
 		vocab = list(model.wv.vocab)
 		vocabMap[year] = vocab
+		# vectors = []
+		# for word in vocab:
+		# 	vectors.append(model.wv[word])
+		# kmeans = KMeans(n_clusters = 5, random_state = 0).fit(np.array(vectors))
+		# centers = kmeans.cluster_centers_
+		# for phraseIndex in range(len(vocab)):
+		# 	word = vocab[phraseIndex]
+		# 	vector = vectors[phraseIndex]
+		# 	label = kmeans.labels_[phraseIndex]
+		# 	centroid = centers[label]
+		# 	distance = np.linalg.norm(vector - centroid)
+		# 	relativeness = 1.0 / distance
+		# 	if word in phraseList:
+		# 		newListIndex = phraseList.index(word)
+		# 		result[newListIndex][year - baseYear] = relativeness
+
+		# currTopPhrases = []
+		# for center in centers:
+		# 	topKeyphrases = [ele[0] for ele in model.similar_by_vector(center, topn = 10)]
+		# 	currTopPhrases.append(topKeyphrases)
+		# topPhrases.append(currTopPhrases)
 
 	for fileName in continuousEmbFileList:
 
@@ -554,19 +573,43 @@ def cossim(a, b):    # a and b are 1D numpy array and should have the same dim
 	b_norm = np.linalg.norm(b)
 	return dot / (a_norm * b_norm)
 
+def getnDCG(GTList, predictList):
+	result = 0.0
+	length = len(GTList)
+	GTIdealScores = [length - i for i in range(length)]
+	GTMap = {}
+	for index, ele in enumerate(GTList):
+		GTMap[ele] = float(length) - index
+
+	for index, ele in enumerate(predictList):
+		rel = GTMap[ele] if ele in GTMap else 0
+		denominator = math.log((index + 2), 2)
+		result += (rel / denominator)
+
+	maxScore = 0.0
+	for index, ele in enumerate(GTIdealScores):
+		rel = ele
+		denominator = math.log((index + 2), 2)
+		maxScore += (rel / denominator)
+
+	return result / maxScore
+
 if (__name__ == "__main__"):
 	# fileName = "json/soft-abs-nolast-ori.txt"
 	# fileName = "single/soft.txt"
-	# fileName = "np-doublegraph/doublegraph-5000-NPs.txt"
-	vocabFileName = "np-doublegraph/doublegraph-NPs-vocab.txt"
-	fileName = "np-doublegraph/TextRankbaseline.txt"
-	aggregateCoefficient = 0.2
+	fileName = "process/doublegraph-NPs.txt"
+	vocabFileName = "process/doublegraph-vocab.txt"
+	# fileName = "np-doublegraph/TextRankbaseline.txt"
 	phraseList, timeSeries = readTimeSeriesData(fileName)
 	vocabList, tfIdfSeries = readTimeSeriesData(vocabFileName)
 	vocabTfIdfSeriesMap = {}
 	for index in range(len(vocabList)):
 		vocabTfIdfSeriesMap[vocabList[index]] = tfIdfSeries[index]
+	# print timeSeries[-1]
+	# print timeSeries[-2]
 
+	# print vocabTfIdfSeriesMap["information"]
+	# print vocabTfIdfSeriesMap["pattern"]
 	windowSize = 3
 	testSize = 20
 	numOfTopics = 10
@@ -574,20 +617,32 @@ if (__name__ == "__main__"):
 
 	baseYear = 1954
 
+	print len(timeSeries)
+	print len(timeSeries[0])
+
+	predefinedNumOfClusters = 20
+
+
+	"""
+	Toggle here for training with Google Word2Vec model, comment out the following lines to get rid of Word2Vec
+	"""
+	relativenessMatrix, topPhrases = prepareWordWithGoogleMatrix(phraseList, timeSeries, baseYear, vocabTfIdfSeriesMap, predefinedNumOfClusters)
+	# relativenessMatrix = normalize2DArrayVertical(np.asarray(relativenessMatrix))   # add this when it's not the division-by-0 error
+	# relativeMatrixShortened = np.array(relativenessMatrix)[:, 3:]
+	timeSeries = (np.asarray(timeSeries) * np.asarray(relativenessMatrix)).tolist()
+	"""
+	End of toggle
+	"""
+
+	# timeSeries = normLinear(timeSeries)
+
 	newXList, newYList, powerTerms, yearCover = splitData3(timeSeries, windowSize)
 	newXList = np.asarray(newXList)
 	newYList = np.asarray(newYList)
 
 	print "finished splitting data"
 
-	regression = linear_model.LinearRegression()
 	phraseCount = len(phraseList)
-	# meanSquareError = {}
-	# varianceScore = {}
-	# coefRegression = {}
-
-	# RMSErrorTermListMap = {phrase:[0 for n in range(yearCover)] for phrase in phraseList}
-	# RMSErrorTermList = [[0 for n in range(yearCover)] for i in range(phraseCount)]
 	RMSErrorTerm = []
 	DIFFTermListActual = [[0 for n in range(yearCover)] for i in range(phraseCount)]
 	DIFFTermListPrediction = [[0 for n in range(yearCover)] for i in range(phraseCount)]
@@ -608,10 +663,6 @@ if (__name__ == "__main__"):
 	newYTrainBkp = np.copy(newYTrain)
 
 	newXListWithoutIndices = np.delete(newXList, np.s_[0:2], axis = 1)
-
-	# print "length of training"
-	# print len(newXTrain)
-	# print "before statsmodel"
 
 
 	"""
@@ -673,9 +724,6 @@ if (__name__ == "__main__"):
 	End of regression part
 	"""
 
-	# print "regression coefficients:"
-	# print regression.coef_
-
 	newTrainingSize = len(newXTrain)
 	newTestSize = len(newXTest)
 
@@ -690,29 +738,43 @@ if (__name__ == "__main__"):
 		trainingSampleYear = newXTrainYear[sampleIndex]
 		trainingSamplePhraseIndex = newXTrainIndices[sampleIndex]
 		trainingSamplePhrase = phraseList[int(trainingSamplePhraseIndex)]
+		# RMSErrorTermListMap[trainingSamplePhrase][trainingSampleYear] = (newYTrain - newPredictedYTrain)[sampleIndex]
+		# RMSErrorTermList[trainingSamplePhraseIndex][trainingSampleYear] = (newYTrain - newPredictedYTrain)[sampleIndex]
 		DIFFTermListActual[trainingSamplePhraseIndex][trainingSampleYear] = newYTrain[sampleIndex] - np.max(newXTrain[sampleIndex])
 		DIFFTermListPrediction[trainingSamplePhraseIndex][trainingSampleYear] = newPredictedYTrain[sampleIndex] - np.max(newXTrain[sampleIndex])
 		maxTermListActual[trainingSamplePhraseIndex][trainingSampleYear] = np.max(newXTrain[sampleIndex])
+		# DIFFTermListActualTrain[trainingSamplePhraseIndex][trainingSampleYear] = newYTrain[sampleIndex] - np.max(newXTrain[sampleIndex])
+		# DIFFTermListPredictionTrain[trainingSamplePhraseIndex][trainingSampleYear] = newPredictedYTrain[sampleIndex] - np.max(newXTrain[sampleIndex])
 
 	for sampleIndex in range(newTestSize):
 		testSampleYear = newXTestYear[sampleIndex]
 		testSamplePhraseIndex = newXTestIndices[sampleIndex]
 		testSamplePhrase = phraseList[int(testSamplePhraseIndex)]
+		# RMSErrorTermListMap[testSamplePhrase][testSampleYear] = (newYTest - newPredictedYTest)[sampleIndex]
+		# RMSErrorTermList[testSamplePhraseIndex][testSampleYear] = (newYTest - newPredictedYTest)[sampleIndex]
 		DIFFTermListActual[testSamplePhraseIndex][testSampleYear] = newYTest[sampleIndex] - np.max(newXTest[sampleIndex])
 		DIFFTermListPrediction[testSamplePhraseIndex][testSampleYear] = newPredictedYTest[sampleIndex] - np.max(newXTest[sampleIndex])
 		maxTermListActual[testSamplePhraseIndex][testSampleYear] = np.max(newXTest[sampleIndex])
+		# DIFFTermListActualTest[testSamplePhraseIndex][testSampleYear] = newYTest[sampleIndex] - np.max(newXTest[sampleIndex])
+		# DIFFTermListPredictionTest[testSamplePhraseIndex][testSampleYear] = newPredictedYTest[sampleIndex] - np.max(newXTest[sampleIndex])
 
+	# RMSErrorTermMap = {phrase:np.sqrt(np.sum((np.asarray(RMSErrorTermListMap[phrase])**2)) / yearCover) for phrase in phraseList}
+	# RMSErrorTerm = [np.sqrt(np.sum(np.array(a) ** 2) / yearCover) for a in RMSErrorTermList]
 	DIFFTermListActual = np.asarray(DIFFTermListActual)
 	DIFFTermListPrediction = np.asarray(DIFFTermListPrediction)
 	maxTermListActual = np.asarray(maxTermListActual)
-
+	# maxTermListActual = np.reshape(maxTermListActual, (maxTermListActual.shape[0], maxTermListActual.shape[1]))
+	# DIFFTermListActualTrain = np.asarray(DIFFTermListActualTrain)
+	# DIFFTermListActualTest = np.asarray(DIFFTermListActualTest)
+	# DIFFTermListPredictionTrain = np.asarray(DIFFTermListPredictionTrain)
+	# DIFFTermListPredictionTest = np.asarray(DIFFTermListPredictionTest)
 	phraseList = np.asarray(phraseList)
 
 	trendingPhrasesList = []
 	trendingPhrasesListWithTrainTest = []
-	newTrendingPhraseList = []
-	nDCGList = []
-	numberOfTrendingWords = 20
+	
+	# nDCGList = []
+	# numberOfTrendingWords = 10
 
 	weightDIFF = 0.8
 	weightOrigin = 1 - weightDIFF
@@ -730,104 +792,76 @@ if (__name__ == "__main__"):
 	"""
 	wordembsamples = []
 
+	trendingWords = [10, 20, 30]
 
-	predefinedSpaceForWriting = 30
-	# the TP, FP, TN should all come from the top 20 words (in the slide confirm this)
-	for year in range(yearCover):
+	for numberOfTrendingWords in trendingWords:
+		newTrendingPhraseList = []
 
-		currentYearActualDiff = comparisonTermListActual[:, year]
-		currentYearPredictDiff = comparisonTermListPredict[:, year]
+		predefinedSpaceForWriting = 30
+		# the TP, FP, TN should all come from the top 20 words (in the slide confirm this)
+		avgNDCG = 0.0
+		for year in range(yearCover):
 
-		actualDistIndices = np.argpartition(currentYearActualDiff, -numberOfTrendingWords)[-numberOfTrendingWords:]
-		predictDistIndices = np.argpartition(currentYearPredictDiff, -numberOfTrendingWords)[-numberOfTrendingWords:]
+			currentYearActualDiff = comparisonTermListActual[:, year]
+			currentYearPredictDiff = comparisonTermListPredict[:, year]
 
-		actualDistIndices = actualDistIndices[np.argsort(currentYearActualDiff[actualDistIndices])]
-		predictDistIndices = predictDistIndices[np.argsort(currentYearPredictDiff[predictDistIndices])]
+			actualDistIndices = np.argpartition(currentYearActualDiff, -numberOfTrendingWords)[-numberOfTrendingWords:]
+			predictDistIndices = np.argpartition(currentYearPredictDiff, -numberOfTrendingWords)[-numberOfTrendingWords:]
 
-		actualDistIndices = actualDistIndices[::-1]
-		predictDistIndices = predictDistIndices[::-1]
+			actualDistIndices = actualDistIndices[np.argsort(currentYearActualDiff[actualDistIndices])]
+			predictDistIndices = predictDistIndices[np.argsort(currentYearPredictDiff[predictDistIndices])]
 
+			actualDistIndices = actualDistIndices[::-1]
+			predictDistIndices = predictDistIndices[::-1]
 
-		actualTrendingPhrases = phraseList[actualDistIndices]
-		predictTrendingPhrases = phraseList[predictDistIndices]
+			actualTrendingPhrases = phraseList[actualDistIndices]
+			predictTrendingPhrases = phraseList[predictDistIndices]
 
-		wordembsamples.append(list(actualTrendingPhrases))
+			wordembsamples.append(list(actualTrendingPhrases))
 
-		totalList = []
+			totalList = []
 
-		# predefine the longest word will be shorter than 20 characters
+			avgNDCG += getnDCG(actualTrendingPhrases, predictTrendingPhrases)
 
-		for index in range(numberOfTrendingWords):
-			currentActualPhrase = actualTrendingPhrases[index]
-			currentPredictPhrase = predictTrendingPhrases[index]
-
-			if currentActualPhrase in predictTrendingPhrases:
-				numOfSpaces = predefinedSpaceForWriting - len(currentActualPhrase)
-				for i in range(numOfSpaces):
-					currentActualPhrase += " "
-				currentActualPhrase += "+ +"
-			else:
-				numOfSpaces = predefinedSpaceForWriting - len(currentActualPhrase)
-				for i in range(numOfSpaces):
-					currentActualPhrase += " "
-				currentActualPhrase += "+ -"
-			# currentActualPhrase += ("    " + str(currActualTermTopic) + "    " + str(currActualTermTopicOri))
-
-			if currentPredictPhrase in actualTrendingPhrases:
-				numOfSpaces = predefinedSpaceForWriting - len(currentPredictPhrase)
-				for i in range(numOfSpaces):
-					currentPredictPhrase += " "
-				currentPredictPhrase += "+ +"
-			else:
-				numOfSpaces = predefinedSpaceForWriting - len(currentPredictPhrase)
-				for i in range(numOfSpaces):
-					currentPredictPhrase += " "
-				currentPredictPhrase += "- +"
-			# currentPredictPhrase += ("    " + str(currPredictTermTopic) + "    " + str(currPredictTermTopicOri))
-
-			totalList.append(currentActualPhrase)
-			totalList.append(currentPredictPhrase)
-
-		currentNDCG = calcMRRMAPNDCG(actualDistIndices, predictDistIndices)
-		# currentNDCGWrite = str(2004 - yearCover - windowSize + year) + ": " + str(currentNDCG)
-		currentNDCGWrite = str(2011 - yearCover + year + 1) + ": " + str(currentNDCG)
-		nDCGList.append(currentNDCGWrite)
-
-		newTrendingPhraseList.append("----Trending words " + str(2011 - yearCover + year + 1) + "----actual---predict---topicID---")
-		newTrendingPhraseList += totalList
-		newTrendingPhraseList.append("\n")
-
-	"""
-	Original Word embedding inference part:
-	average(topemb1, topemb2, topemb3) -> topemb4
-	"""
+			for index in range(numberOfTrendingWords):
+				currentActualPhrase = actualTrendingPhrases[index]
+				currentPredictPhrase = predictTrendingPhrases[index]
 
 
-	# wordEmbTrainingX, wordEmbTrainingY, fullX, fullY = formWordEmbeddingTrainingData(wordembsamples, wordModel, wordModelVocab)
-	# wordEmbTrainingYPredict = trainEmbWords(wordEmbTrainingX, wordEmbTrainingY, fullX)
+				if currentActualPhrase in predictTrendingPhrases:
+					numOfSpaces = predefinedSpaceForWriting - len(currentActualPhrase)
+					for i in range(numOfSpaces):
+						currentActualPhrase += " "
+					currentActualPhrase += "+ +"
+				else:
+					numOfSpaces = predefinedSpaceForWriting - len(currentActualPhrase)
+					for i in range(numOfSpaces):
+						currentActualPhrase += " "
+					currentActualPhrase += "+ -"
+				# currentActualPhrase += ("    " + str(currActualTermTopic) + "    " + str(currActualTermTopicOri))
 
-	# wordembsamplesArray = np.asarray(wordembsamples)[3:, :]
-	# wordembsamplesArrayPredict = []
-	# for wordEmbY in wordEmbTrainingYPredict:
-	# 	topKeyphrases = [ele[0] for ele in wordModel.similar_by_vector(wordEmbY, topn = 20)]
-	# 	wordembsamplesArrayPredict.append(topKeyphrases)
+				if currentPredictPhrase in actualTrendingPhrases:
+					numOfSpaces = predefinedSpaceForWriting - len(currentPredictPhrase)
+					for i in range(numOfSpaces):
+						currentPredictPhrase += " "
+					currentPredictPhrase += "+ +"
+				else:
+					numOfSpaces = predefinedSpaceForWriting - len(currentPredictPhrase)
+					for i in range(numOfSpaces):
+						currentPredictPhrase += " "
+					currentPredictPhrase += "- +"
+				# currentPredictPhrase += ("    " + str(currPredictTermTopic) + "    " + str(currPredictTermTopicOri))
 
-	# print len(wordembsamplesArray), len(wordembsamplesArray[0])
-	# print len(wordembsamplesArrayPredict), len(wordembsamplesArrayPredict[0])
+				totalList.append(currentActualPhrase)
+				totalList.append(currentPredictPhrase)
 
-	# wordembsamplesArrayFullY = []
-	# for wordEmbY in fullY:
-	# 	topKeyphrases = [ele[0] for ele in wordModel.similar_by_vector(wordEmbY, topn = 20)]
-	# 	wordembsamplesArrayFullY.append(topKeyphrases)
+			newTrendingPhraseList.append("----Trending words " + str(2011 - yearCover + year + 1) + "----actual---predict---topicID---")
+			newTrendingPhraseList += totalList
+			newTrendingPhraseList.append("\n")
 
-	# writeWordEmbLists(wordembsamplesArray, wordembsamplesArrayPredict, "wordemb/embskiplists.txt")
-	# writeWordEmbLists(wordembsamplesArrayFullY, wordembsamplesArrayPredict, "wordemb/skipcomp.txt")
-
-	"""
-	End of original word embedding part
-	"""
-
-	writeList(nDCGList, "np-doublegraph/nDCG-soft-nolast-ori.txt")
-	writeList(newTrendingPhraseList, "np-doublegraph/soft2RNN4neuron-" + str(windowSize) + "-" + str(weightDIFF) + ".txt")
+		avgNDCG = avgNDCG / yearCover
+		print "clusters: " + str(predefinedNumOfClusters) + "; trending words: " + str(numberOfTrendingWords) + "; nDCG: " + str(avgNDCG)
+		writeList(newTrendingPhraseList, "process/result-" + str(predefinedNumOfClusters) + "-clusters-" + str(numberOfTrendingWords) + "words.txt")
+		# writeList(newTrendingPhraseList, "process/result-" + str(windowSize) + "-" + str(weightDIFF) + ".txt")
 
 	pass
