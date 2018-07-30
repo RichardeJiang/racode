@@ -22,8 +22,8 @@ python doubleGraphExtract.py
 ```
 to extract the noun phrases from the corpora, and calculate their MGR scores in each year. This part of the logic can be illustrated by the following plot:
 
-<img src="./images/plot.png">
+<img src="./images/plot.png" width="400px">
 
 and you may find the corresponding explanation in Section 3.1 of the paper.
 
-This will generate several files to be used in later stage
+This will generate several files to be used in later stage.

@@ -9,7 +9,6 @@ from collections import Counter
 import os
 import math
 import numpy as np
-from gensim import corpora, models
 import json
 from sklearn.feature_extraction.text import TfidfVectorizer
 
